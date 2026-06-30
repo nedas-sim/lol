@@ -27,6 +27,19 @@
   .heatmap .cell { height: 26px; background: #181818; border-radius: 3px; }
   .heatmap .row-label { color: #666; display: flex; align-items: center; font-size: 0.8em; }
   .heatmap .col-label { text-align: center; color: #444; font-size: 0.7em; height: 18px; display: flex; align-items: center; justify-content: center; }
+
+  /* GitHub-style year heatmap */
+  .gh-heatmap-wrap { overflow-x: auto; margin-top: 12px; padding-bottom: 4px; }
+  .gh-heatmap { position: relative; }
+  .gh-month-label { position: absolute; top: 0; font-size: 0.75em; color: #8b949e; white-space: nowrap; }
+  .gh-day-label { position: absolute; left: 0; font-size: 0.72em; color: #8b949e; line-height: 11px; }
+  .gh-cell { position: absolute; width: 11px; height: 11px; border-radius: 2px; cursor: default; }
+  .gh-level-empty { background: transparent; }
+  .gh-level-0 { background: #161b22; }
+  .gh-level-1 { background: #0e4429; }
+  .gh-level-2 { background: #006d32; }
+  .gh-level-3 { background: #26a641; }
+  .gh-level-4 { background: #39d353; }
 </style>
 </head>
 <body>
@@ -45,6 +58,9 @@
     <div class="streak-box"><div class="val" id="bestStreak"></div><div class="lbl">best day streak</div></div>
     <div class="streak-box"><div class="val" id="bestDay"></div><div class="lbl">most lols in one day</div></div>
   </div>
+
+  <h2>This year</h2>
+  <div id="githubHeatmapWrap"></div>
 
   <h2>Lols per day (last 30 days)</h2>
   <div class="chart-wrap"><canvas id="dailyChart"></canvas></div>
@@ -135,6 +151,90 @@
     }
 
     return { current, best };
+  }
+
+  function buildGithubHeatmap(dailyMap) {
+    const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const CELL = 11, GAP = 3, STEP = CELL + GAP;
+    const DAY_LABEL_W = 26, MONTH_H = 20;
+
+    const today = new Date();
+    const year = today.getFullYear();
+
+    // First Monday on or before Jan 1
+    const jan1 = new Date(year, 0, 1);
+    const dow = jan1.getDay(); // 0=Sun
+    const daysBack = dow === 0 ? 6 : dow - 1;
+    const firstMonday = new Date(year, 0, 1 - daysBack);
+
+    // Build week columns
+    // Extend to the Sunday that ends the week containing Dec 31
+    const dec31 = new Date(year, 11, 31);
+    const dec31Row = (dec31.getDay() + 6) % 7; // Mon=0 … Sun=6
+    const lastSunday = new Date(year, 11, 31 + (6 - dec31Row));
+
+    const weeks = [];
+    const cur = new Date(firstMonday);
+    while (cur <= lastSunday) {
+      const week = [];
+      for (let d = 0; d < 7; d++) {
+        const day = new Date(cur.getFullYear(), cur.getMonth(), cur.getDate() + d);
+        const inYear = day.getFullYear() === year;
+        const future = day > today;
+        const ds = day.toLocaleDateString('en-CA');
+        week.push({ day, inYear, future, ds, count: (inYear && !future) ? (dailyMap[ds] || 0) : null });
+      }
+      weeks.push(week);
+      cur.setDate(cur.getDate() + 7);
+    }
+
+    const max = Math.max(1, ...weeks.flat().filter(d => d.count !== null).map(d => d.count));
+    const ghLevel = n => !n ? 0 : n / max <= 0.25 ? 1 : n / max <= 0.5 ? 2 : n / max <= 0.75 ? 3 : 4;
+
+    // Month labels: week index where the 1st of each month first appears
+    const seenMonths = new Set(), monthLabels = [];
+    weeks.forEach((week, wi) => {
+      for (const d of week) {
+        if (d.inYear && d.day.getDate() === 1 && !seenMonths.has(d.day.getMonth())) {
+          seenMonths.add(d.day.getMonth());
+          monthLabels.push({ wi, name: MONTHS[d.day.getMonth()] });
+        }
+      }
+    });
+
+    const totalW = DAY_LABEL_W + weeks.length * STEP - GAP;
+    const totalH = MONTH_H + 7 * STEP - GAP;
+
+    let html = `<div class="gh-heatmap" style="width:${totalW}px;height:${totalH}px">`;
+
+    for (const { wi, name } of monthLabels)
+      html += `<span class="gh-month-label" style="left:${DAY_LABEL_W + wi * STEP}px">${name}</span>`;
+
+    // Mon / Wed / Fri labels (rows 0, 2, 4)
+    for (const [di, label] of [[0,'Mon'],[2,'Wed'],[4,'Fri']]) {
+      const y = MONTH_H + di * STEP + Math.round((CELL - 10) / 2);
+      html += `<span class="gh-day-label" style="top:${y}px">${label}</span>`;
+    }
+
+    weeks.forEach((week, wi) => {
+      const x = DAY_LABEL_W + wi * STEP;
+      week.forEach((d, di) => {
+        const y = MONTH_H + di * STEP;
+        if (!d.inYear) {
+          html += `<div class="gh-cell gh-level-empty" style="left:${x}px;top:${y}px"></div>`;
+          return;
+        }
+        if (d.future) {
+          html += `<div class="gh-cell gh-level-0" style="left:${x}px;top:${y}px" title="${d.day.toLocaleDateString()} — 0 lols"></div>`;
+          return;
+        }
+        const tip = `${d.day.toLocaleDateString()} — ${d.count} lol${d.count !== 1 ? 's' : ''}`;
+        html += `<div class="gh-cell gh-level-${ghLevel(d.count)}" style="left:${x}px;top:${y}px" title="${tip}"></div>`;
+      });
+    });
+
+    html += '</div>';
+    document.getElementById('githubHeatmapWrap').innerHTML = `<div class="gh-heatmap-wrap">${html}</div>`;
   }
 
   function buildHeatmap(heatData) {
@@ -243,6 +343,9 @@
         }
       });
     }
+
+    // GitHub year heatmap
+    buildGithubHeatmap(dailyMap);
 
     // Heatmap
     buildHeatmap(heatData);
