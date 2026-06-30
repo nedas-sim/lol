@@ -20,14 +20,12 @@
   table { width: 100%; border-collapse: collapse; font-size: 0.85em; margin-top: 8px; }
   th { text-align: left; color: #666; padding: 4px 8px; border-bottom: 1px solid #222; }
   td { padding: 4px 8px; border-bottom: 1px solid #1a1a1a; }
-  td.num { text-align: right; color: #aaa; }
 
-  /* Heatmap */
-  .heatmap { display: grid; grid-template-columns: 40px repeat(24, 1fr); gap: 2px; margin-top: 8px; font-size: 0.7em; }
+  /* Heatmap — single grid, header row first */
+  .heatmap { display: grid; grid-template-columns: 36px repeat(24, 1fr); gap: 2px; margin-top: 8px; font-size: 0.7em; }
   .heatmap .cell { height: 18px; background: #1a1a1a; border-radius: 2px; }
   .heatmap .row-label { color: #555; display: flex; align-items: center; }
-  .heatmap .col-labels { display: grid; grid-template-columns: 40px repeat(24, 1fr); gap: 2px; margin-bottom: 2px; }
-  .heatmap .col-label { text-align: center; color: #444; font-size: 0.65em; }
+  .heatmap .col-label { text-align: center; color: #444; font-size: 0.65em; height: 14px; display: flex; align-items: center; justify-content: center; }
 </style>
 </head>
 <body>
@@ -79,21 +77,15 @@
     r.onerror = rej;
   });
 
-  function idbGet(key) {
-    return new Promise((res, rej) => {
-      const tx = idb.transaction('handles', 'readonly').objectStore('handles').get(key);
-      tx.onsuccess = () => res(tx.result);
-      tx.onerror = rej;
-    });
-  }
+  const idbGet = key => new Promise((res, rej) => {
+    const tx = idb.transaction('handles', 'readonly').objectStore('handles').get(key);
+    tx.onsuccess = () => res(tx.result); tx.onerror = rej;
+  });
 
-  function idbSet(key, val) {
-    return new Promise((res, rej) => {
-      const tx = idb.transaction('handles', 'readwrite').objectStore('handles').put(val, key);
-      tx.onsuccess = res;
-      tx.onerror = rej;
-    });
-  }
+  const idbSet = (key, val) => new Promise((res, rej) => {
+    const tx = idb.transaction('handles', 'readwrite').objectStore('handles').put(val, key);
+    tx.onsuccess = res; tx.onerror = rej;
+  });
 
   async function startPolling(handle) {
     fileHandle = handle;
@@ -117,28 +109,27 @@
     await startPolling(fileHandle);
   });
 
+  // Add n days to a local 'YYYY-MM-DD' string; noon anchor avoids DST edge cases
+  function addLocalDays(dateStr, n) {
+    const d = new Date(dateStr + 'T12:00:00');
+    d.setDate(d.getDate() + n);
+    return d.toLocaleDateString('en-CA');
+  }
+
   function computeStreaks(allDays) {
-    // allDays: sorted array of 'YYYY-MM-DD' strings with at least 1 lol
     if (!allDays.length) return { current: 0, best: 0 };
     const daySet = new Set(allDays);
-    const toMs = d => new Date(d + 'T00:00:00Z').getTime();
-    const ONE_DAY = 86400000;
 
-    // current streak: from today backwards
-    const todayMs = toMs(new Date().toISOString().slice(0, 10));
+    // current streak backwards from today (local)
     let current = 0;
-    let cursor = todayMs;
-    while (daySet.has(new Date(cursor).toISOString().slice(0, 10))) {
-      current++;
-      cursor -= ONE_DAY;
-    }
+    let cursor = new Date().toLocaleDateString('en-CA');
+    while (daySet.has(cursor)) { current++; cursor = addLocalDays(cursor, -1); }
 
     // best streak
     const sorted = [...daySet].sort();
     let best = 1, run = 1;
     for (let i = 1; i < sorted.length; i++) {
-      const diff = toMs(sorted[i]) - toMs(sorted[i - 1]);
-      if (diff === ONE_DAY) { run++; if (run > best) best = run; }
+      if (sorted[i] === addLocalDays(sorted[i - 1], 1)) { run++; if (run > best) best = run; }
       else run = 1;
     }
 
@@ -146,23 +137,23 @@
   }
 
   function buildHeatmap(heatData) {
-    // heatData: { 'dow:hour': count }
     const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const max = Math.max(1, ...Object.values(heatData));
 
-    let html = '<div class="col-labels"><div></div>';
+    // Header row inside the grid: empty corner + 24 hour labels
+    let html = '<div class="heatmap"><div class="row-label"></div>';
     for (let h = 0; h < 24; h++)
       html += `<div class="col-label">${h}</div>`;
-    html += '</div><div class="heatmap">';
 
+    // 7 day rows
     for (let d = 0; d < 7; d++) {
       html += `<div class="row-label">${DAYS[d]}</div>`;
       for (let h = 0; h < 24; h++) {
         const n = heatData[`${d}:${h}`] || 0;
         const alpha = n ? (0.15 + 0.85 * (n / max)).toFixed(2) : 0;
         const bg = n ? `rgba(99,230,99,${alpha})` : '#1a1a1a';
-        const title = n ? `${DAYS[d]} ${h}:00 — ${n} lol${n>1?'s':''}` : '';
-        html += `<div class="cell" style="background:${bg}" title="${title}"></div>`;
+        const tip = n ? `${DAYS[d]} ${h}:00 — ${n} lol${n > 1 ? 's' : ''}` : '';
+        html += `<div class="cell" style="background:${bg}" title="${tip}"></div>`;
       }
     }
     html += '</div>';
@@ -175,61 +166,63 @@
     lastModified = file.lastModified;
 
     const db = new SQL.Database(new Uint8Array(await file.arrayBuffer()));
-    const q = (sql, params) => { const r = db.exec(sql, params); return r[0]; };
+    const q = sql => { const r = db.exec(sql); return r[0]; };
 
-    // Total
-    document.getElementById('total').textContent =
-      q("SELECT COUNT(*) FROM lols").values[0][0];
+    // Pull all timestamps once; all bucketing done in JS with local time
+    const allRows = q("SELECT lolled_at FROM lols ORDER BY lolled_at");
+    const dates = allRows ? allRows.values.map(r => new Date(r[0])) : [];
+
+    document.getElementById('total').textContent = dates.length;
+
+    // Aggregate using local time
+    const dailyMap = {}, hourlyData = Array(24).fill(0), heatData = {};
+    for (const d of dates) {
+      const day = d.toLocaleDateString('en-CA');
+      dailyMap[day] = (dailyMap[day] || 0) + 1;
+      const h = d.getHours();
+      hourlyData[h]++;
+      heatData[`${d.getDay()}:${h}`] = (heatData[`${d.getDay()}:${h}`] || 0) + 1;
+    }
 
     // Streaks
-    const dayRows = q("SELECT date(lolled_at) as d FROM lols GROUP BY d ORDER BY d").values;
-    const allDays = dayRows.map(r => r[0]);
+    const allDays = [...new Set(dates.map(d => d.toLocaleDateString('en-CA')))].sort();
     const { current, best } = computeStreaks(allDays);
     document.getElementById('currentStreak').textContent = current;
     document.getElementById('bestStreak').textContent = best;
+    const bestDayCount = allDays.reduce((max, day) => Math.max(max, dailyMap[day] || 0), 0);
+    document.getElementById('bestDay').textContent = bestDayCount;
 
-    const bestDayRow = q("SELECT date(lolled_at) as d, COUNT(*) as n FROM lols GROUP BY d ORDER BY n DESC LIMIT 1");
-    document.getElementById('bestDay').textContent = bestDayRow ? bestDayRow.values[0][1] : 0;
-
-    // Daily chart (last 30 days) — fill missing days with 0
-    const dailyRows = q(`
-      SELECT date(lolled_at) as d, COUNT(*) as n
-      FROM lols
-      WHERE lolled_at >= date('now', '-29 days')
-      GROUP BY d ORDER BY d
-    `);
-    const dailyMap = {};
-    if (dailyRows) for (const [d, n] of dailyRows.values) dailyMap[d] = n;
-    const dailyLabels = [], dailyData = [];
+    // Daily chart — last 30 local days
+    const dailyLabels = [], dailyChartData = [];
     for (let i = 29; i >= 0; i--) {
-      const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
-      dailyLabels.push(d.slice(5)); // MM-DD
-      dailyData.push(dailyMap[d] || 0);
+      const day = addLocalDays(new Date().toLocaleDateString('en-CA'), -i);
+      dailyLabels.push(day.slice(5)); // MM-DD
+      dailyChartData.push(dailyMap[day] || 0);
     }
     if (dailyChart) {
       dailyChart.data.labels = dailyLabels;
-      dailyChart.data.datasets[0].data = dailyData;
+      dailyChart.data.datasets[0].data = dailyChartData;
       dailyChart.update();
     } else {
       dailyChart = new Chart(document.getElementById('dailyChart'), {
         type: 'line',
         data: {
           labels: dailyLabels,
-          datasets: [{ data: dailyData, borderColor: '#63e663', backgroundColor: 'rgba(99,230,99,0.1)',
-            borderWidth: 1.5, pointRadius: 2, fill: true, tension: 0.3 }]
+          datasets: [{ data: dailyChartData, borderColor: '#63e663',
+            backgroundColor: 'rgba(99,230,99,0.1)', borderWidth: 1.5,
+            pointRadius: 2, fill: true, tension: 0.3 }]
         },
-        options: { plugins: { legend: { display: false } }, scales: {
-          x: { ticks: { maxTicksLimit: 10 } },
-          y: { beginAtZero: true, ticks: { stepSize: 1 } }
-        }, animation: false }
+        options: {
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { x: { ticks: { maxTicksLimit: 10 } }, y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+          animation: false
+        }
       });
     }
 
     // Hourly chart
-    const hourlyRows = q("SELECT CAST(strftime('%H', lolled_at) AS INTEGER) as h, COUNT(*) as n FROM lols GROUP BY h ORDER BY h");
-    const hourlyData = Array(24).fill(0);
-    if (hourlyRows) for (const [h, n] of hourlyRows.values) hourlyData[h] = n;
-    const hourlyLabels = Array.from({length: 24}, (_, i) => i + ':00');
+    const hourlyLabels = Array.from({ length: 24 }, (_, i) => i + ':00');
     if (hourlyChart) {
       hourlyChart.data.datasets[0].data = hourlyData;
       hourlyChart.update();
@@ -238,18 +231,19 @@
         type: 'bar',
         data: {
           labels: hourlyLabels,
-          datasets: [{ data: hourlyData, backgroundColor: 'rgba(99,230,99,0.4)', borderColor: '#63e663', borderWidth: 1 }]
+          datasets: [{ data: hourlyData, backgroundColor: 'rgba(99,230,99,0.4)',
+            borderColor: '#63e663', borderWidth: 1 }]
         },
-        options: { plugins: { legend: { display: false } }, scales: {
-          y: { beginAtZero: true, ticks: { stepSize: 1 } }
-        }, animation: false }
+        options: {
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } },
+          animation: false
+        }
       });
     }
 
     // Heatmap
-    const heatRows = q("SELECT CAST(strftime('%w', lolled_at) AS INTEGER) as dow, CAST(strftime('%H', lolled_at) AS INTEGER) as h, COUNT(*) as n FROM lols GROUP BY dow, h");
-    const heatData = {};
-    if (heatRows) for (const [dow, h, n] of heatRows.values) heatData[`${dow}:${h}`] = n;
     buildHeatmap(heatData);
 
     // Recent
