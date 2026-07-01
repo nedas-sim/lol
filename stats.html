@@ -9,6 +9,8 @@
   h2 { font-size: 0.85em; color: #55aaff; text-transform: uppercase; letter-spacing: 0.15em; margin: 40px 0 12px; border-bottom: 1px solid #1e1e1e; padding-bottom: 6px; }
   button { padding: 10px 20px; background: #1a1a1a; border: 1px solid #333; cursor: pointer; color: #bbb; font-family: monospace; font-size: 1em; border-radius: 3px; }
   button:hover { border-color: #55aaff; color: #fff; }
+  #shareBtn { display: none; }
+  #shareFeedback { display: inline-block; margin-left: 10px; color: #63e663; font-size: 0.85em; opacity: 0; transition: opacity 0.3s; }
   #stats { display: none; }
   #status { display: inline-block; margin-left: 16px; color: #444; font-size: 0.85em; }
   .total { font-size: 4em; color: #fff; font-weight: bold; }
@@ -46,6 +48,8 @@
 
 <h1>:lol: Stats</h1>
 <button id="pickBtn">Load lol.db</button>
+<button id="shareBtn">Copy for Slack</button>
+<span id="shareFeedback">Copied!</span>
 <span id="status"></span>
 
 <div id="stats">
@@ -83,6 +87,7 @@
 (async () => {
   let SQL, fileHandle, lastModified = 0;
   let dailyChart, hourlyChart;
+  let shareStats = { today: 0, total: 0, streak: 0 };
 
   Chart.defaults.color = '#666';
   Chart.defaults.borderColor = '#222';
@@ -124,6 +129,16 @@
     [fileHandle] = await window.showOpenFilePicker(opts);
     await idbSet('fileHandle', fileHandle);
     await startPolling(fileHandle);
+  });
+
+  document.getElementById('shareBtn').addEventListener('click', async () => {
+    const { today, total, streak } = shareStats;
+    const streakStr = streak === 1 ? '1 day' : `${streak} days`;
+    const text = `:lol: *Lol Report* — ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}\n\n:calendar: Today: ${today} lols\n:trophy: All-time: ${total} lols\n:fire: Streak: ${streakStr}`;
+    await navigator.clipboard.writeText(text);
+    const fb = document.getElementById('shareFeedback');
+    fb.style.opacity = '1';
+    setTimeout(() => fb.style.opacity = '0', 2000);
   });
 
   // Add n days to a local 'YYYY-MM-DD' string; noon anchor avoids DST edge cases
@@ -274,6 +289,7 @@
     const dates = allRows ? allRows.values.map(r => new Date(r[0])) : [];
 
     document.getElementById('total').textContent = dates.length;
+    shareStats.total = dates.length;
 
     // Aggregate using local time
     const dailyMap = {}, hourlyData = Array(24).fill(0), heatData = {};
@@ -290,6 +306,8 @@
     const { current, best } = computeStreaks(allDays);
     document.getElementById('currentStreak').textContent = current;
     document.getElementById('bestStreak').textContent = best;
+    shareStats.streak = current;
+    shareStats.today = dailyMap[new Date().toLocaleDateString('en-CA')] || 0;
     const bestDayCount = allDays.reduce((max, day) => Math.max(max, dailyMap[day] || 0), 0);
     document.getElementById('bestDay').textContent = bestDayCount;
 
@@ -359,6 +377,7 @@
 
     db.close();
     document.getElementById('stats').style.display = 'block';
+    document.getElementById('shareBtn').style.display = 'inline-block';
     document.getElementById('status').textContent = 'updated ' + new Date().toLocaleTimeString();
   }
 })();
