@@ -58,8 +58,8 @@
 
   <h2>Streaks &amp; Records</h2>
   <div class="streak-grid">
-    <div class="streak-box"><div class="val" id="currentStreak"></div><div class="lbl">current day streak</div></div>
-    <div class="streak-box"><div class="val" id="bestStreak"></div><div class="lbl">best day streak</div></div>
+    <div class="streak-box"><div class="val" id="currentStreak"></div><div class="lbl">current weekday streak</div></div>
+    <div class="streak-box"><div class="val" id="bestStreak"></div><div class="lbl">best weekday streak</div></div>
     <div class="streak-box"><div class="val" id="bestDay"></div><div class="lbl">most lols in one day</div></div>
   </div>
 
@@ -133,7 +133,7 @@
 
   document.getElementById('shareBtn').addEventListener('click', async () => {
     const { today, total, streak } = shareStats;
-    const streakStr = streak === 1 ? '1 day' : `${streak} days`;
+    const streakStr = streak === 1 ? '1 weekday' : `${streak} weekdays`;
     const text = `:lol: *Lol Report* — ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}\n\n:calendar: Today: ${today} lols\n:trophy: All-time: ${total} lols\n:fire: Streak: ${streakStr}`;
     await navigator.clipboard.writeText(text);
     const fb = document.getElementById('shareFeedback');
@@ -148,20 +148,37 @@
     return d.toLocaleDateString('en-CA');
   }
 
+  function isWeekend(dateStr) {
+    const dow = new Date(dateStr + 'T12:00:00').getDay();
+    return dow === 0 || dow === 6;
+  }
+
+  function nextWeekday(dateStr) {
+    let d = addLocalDays(dateStr, 1);
+    while (isWeekend(d)) d = addLocalDays(d, 1);
+    return d;
+  }
+
   function computeStreaks(allDays) {
     if (!allDays.length) return { current: 0, best: 0 };
     const daySet = new Set(allDays);
 
-    // current streak backwards from today (local)
+    // current streak: walk backwards from today, weekends are transparent
     let current = 0;
     let cursor = new Date().toLocaleDateString('en-CA');
-    while (daySet.has(cursor)) { current++; cursor = addLocalDays(cursor, -1); }
+    while (true) {
+      if (isWeekend(cursor)) { cursor = addLocalDays(cursor, -1); continue; }
+      if (!daySet.has(cursor)) break;
+      current++;
+      cursor = addLocalDays(cursor, -1);
+    }
 
-    // best streak
-    const sorted = [...daySet].sort();
+    // best streak: consecutive weekdays only
+    const weekdays = allDays.filter(d => !isWeekend(d)).sort();
+    if (!weekdays.length) return { current, best: 0 };
     let best = 1, run = 1;
-    for (let i = 1; i < sorted.length; i++) {
-      if (sorted[i] === addLocalDays(sorted[i - 1], 1)) { run++; if (run > best) best = run; }
+    for (let i = 1; i < weekdays.length; i++) {
+      if (weekdays[i] === nextWeekday(weekdays[i - 1])) { run++; if (run > best) best = run; }
       else run = 1;
     }
 
