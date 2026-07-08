@@ -2,26 +2,33 @@
 
 using Microsoft.Data.Sqlite;
 
-var dbPath = Path.Combine(Directory.GetCurrentDirectory(), "lol.db");
-var dumpPath = Path.Combine(Directory.GetCurrentDirectory(), "dump 06-08 - 07-08.txt");
+if (args.Length < 2)
+{
+    Console.Error.WriteLine("Usage: dotnet run sync.cs -- <from-date> <dump-file>");
+    return 1;
+}
 
+var fromDate = args[0]; // e.g. "2026-07-05"
+var dumpPath = args[1];
+
+var dbPath = Path.Combine(Directory.GetCurrentDirectory(), "lol.db");
 using var conn = new SqliteConnection($"Data Source={dbPath}");
 conn.Open();
 
-// Wipe
 using (var cmd = conn.CreateCommand())
 {
-    cmd.CommandText = "DELETE FROM lols";
-    cmd.ExecuteNonQuery();
+    cmd.CommandText = "DELETE FROM lols WHERE lolled_at >= $from";
+    cmd.Parameters.AddWithValue("$from", fromDate);
+    var deleted = cmd.ExecuteNonQuery();
+    Console.WriteLine($"Deleted {deleted} rows from {fromDate} onward.");
 }
 
-// Insert
 int totalRows = 0;
 using var tx = conn.BeginTransaction();
 foreach (var line in File.ReadLines(dumpPath))
 {
     var parts = line.Split('\t');
-    if (parts.Length < 2) continue;
+    if (parts.Length < 3) continue;
     var ts = parts[1].Trim();
     if (!int.TryParse(parts[2].Trim(), out int count)) continue;
 
@@ -38,3 +45,4 @@ foreach (var line in File.ReadLines(dumpPath))
 tx.Commit();
 
 Console.WriteLine($"Done. Inserted {totalRows} rows.");
+return 0;
