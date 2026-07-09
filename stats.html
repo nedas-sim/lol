@@ -103,6 +103,25 @@
   }
   .lol-pop { animation: lol-pop 0.45s ease-out; }
   @media (prefers-reduced-motion: reduce) { .lol-pop { animation: none; } }
+
+  /* Streak fire */
+  @keyframes flicker {
+    0%, 100% { transform: scale(1) rotate(0deg); opacity: 1; }
+    33%  { transform: scale(0.92) rotate(-3deg); opacity: 0.75; }
+    66%  { transform: scale(1.08) rotate(3deg); opacity: 0.9; }
+  }
+  .fire-emoji, .hourglass-emoji { display: inline-block; font-size: 1.5em; vertical-align: middle; }
+  .fire-emoji[data-tier="0"] { opacity: 0; }
+  .fire-emoji[data-tier="1"] { animation: flicker 2.2s ease-in-out infinite; }
+  .fire-emoji[data-tier="2"] { animation: flicker 1.3s ease-in-out infinite; }
+  .fire-emoji[data-tier="3"] { animation: flicker 0.7s ease-in-out infinite; font-size: 1.7em; }
+  .fire-emoji[data-tier="4"] { animation: flicker 0.35s ease-in-out infinite; font-size: 1.9em; }
+  .hourglass-emoji[data-tier="0"] { animation: flicker 3s ease-in-out infinite; }
+  .hourglass-emoji[data-tier="1"] { animation: flicker 2.2s ease-in-out infinite; }
+  .hourglass-emoji[data-tier="2"] { animation: flicker 1.4s ease-in-out infinite; }
+  .hourglass-emoji[data-tier="3"] { animation: flicker 0.8s ease-in-out infinite; }
+  .hourglass-emoji[data-tier="4"] { animation: flicker 0.4s ease-in-out infinite; }
+  @media (prefers-reduced-motion: reduce) { .fire-emoji, .hourglass-emoji { animation: none !important; } }
 </style>
 </head>
 <body>
@@ -120,10 +139,10 @@
 
   <h2>Streaks &amp; Records</h2>
   <div class="streak-grid">
-    <div class="streak-box"><div class="val" id="todayCount"></div><div class="lbl">today</div></div>
-    <div class="streak-box"><div class="val" id="currentStreak"></div><div class="lbl">current weekday streak</div></div>
-    <div class="streak-box"><div class="val" id="bestStreak"></div><div class="lbl">best weekday streak</div></div>
-    <div class="streak-box"><div class="val" id="bestDay"></div><div class="lbl">most lols in one day</div></div>
+    <div class="streak-box"><div class="val" id="todayCount"></div><div class="lbl"><span class="hourglass-emoji">⏳</span> today</div></div>
+    <div class="streak-box"><div class="val" id="currentStreak"></div><div class="lbl"><span class="fire-emoji" data-tier="0">🔥</span> current weekday streak</div></div>
+    <div class="streak-box"><div class="val" id="bestStreak"></div><div class="lbl">🏆 best weekday streak</div></div>
+    <div class="streak-box"><div class="val" id="bestDay"></div><div class="lbl">👑 most lols in one day</div></div>
   </div>
 
   <h2>This year</h2>
@@ -470,9 +489,13 @@
     const { current, best } = computeStreaks(allDays);
     countUp('currentStreak', current);
     countUp('bestStreak', best);
+    const fireTier = current === 0 ? 0 : current <= 5 ? 1 : current <= 14 ? 2 : current <= 29 ? 3 : 4;
+    document.querySelector('.fire-emoji').dataset.tier = fireTier;
     shareStats.streak = current;
     shareStats.today = dailyMap[new Date().toLocaleDateString('en-CA')] || 0;
     countUp('todayCount', shareStats.today);
+    const hourglassTier = shareStats.today === 0 ? 0 : shareStats.today <= 20 ? 1 : shareStats.today <= 50 ? 2 : shareStats.today <= 99 ? 3 : 4;
+    document.querySelector('.hourglass-emoji').dataset.tier = hourglassTier;
     const bestDayCount = allDays.reduce((max, day) => Math.max(max, dailyMap[day] || 0), 0);
     countUp('bestDay', bestDayCount);
 
