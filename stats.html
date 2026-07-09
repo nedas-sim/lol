@@ -42,6 +42,13 @@
   .gh-level-2 { background: #006d32; }
   .gh-level-3 { background: #26a641; }
   .gh-level-4 { background: #39d353; }
+
+  #tip {
+    position: fixed; pointer-events: none; z-index: 9999;
+    background: rgba(0,0,0,0.8); color: #fff;
+    padding: 6px 10px; border-radius: 4px;
+    font-size: 0.78em; white-space: nowrap; display: none;
+  }
 </style>
 </head>
 <body>
@@ -81,6 +88,7 @@
   </table>
 </div>
 
+<div id="tip"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
@@ -129,6 +137,25 @@
     [fileHandle] = await window.showOpenFilePicker(opts);
     await idbSet('fileHandle', fileHandle);
     await startPolling(fileHandle);
+  });
+
+  const tipEl = document.getElementById('tip');
+  function tipMove(e) {
+    const cell = e.target.closest('[data-tip]');
+    if (cell) {
+      tipEl.textContent = cell.dataset.tip;
+      tipEl.style.display = 'block';
+      tipEl.style.left = (e.clientX + 12) + 'px';
+      tipEl.style.top = (e.clientY - 20) + 'px';
+    } else {
+      tipEl.style.display = 'none';
+    }
+  }
+  function tipOff() { tipEl.style.display = 'none'; }
+  ['githubHeatmapWrap', 'heatmapWrap'].forEach(id => {
+    const el = document.getElementById(id);
+    el.addEventListener('mousemove', tipMove);
+    el.addEventListener('mouseleave', tipOff);
   });
 
   document.getElementById('shareBtn').addEventListener('click', async () => {
@@ -257,11 +284,11 @@
           return;
         }
         if (d.future) {
-          html += `<div class="gh-cell gh-level-0" style="left:${x}px;top:${y}px" title="${d.day.toLocaleDateString()} — 0 lols"></div>`;
+          html += `<div class="gh-cell gh-level-0" style="left:${x}px;top:${y}px" data-tip="${d.day.toLocaleDateString()} — 0 lols"></div>`;
           return;
         }
         const tip = `${d.day.toLocaleDateString()} — ${d.count} lol${d.count !== 1 ? 's' : ''}`;
-        html += `<div class="gh-cell gh-level-${ghLevel(d.count)}" style="left:${x}px;top:${y}px" title="${tip}"></div>`;
+        html += `<div class="gh-cell gh-level-${ghLevel(d.count)}" style="left:${x}px;top:${y}px" data-tip="${tip}"></div>`;
       });
     });
 
@@ -285,8 +312,8 @@
         const n = heatData[`${d}:${h}`] || 0;
         const alpha = n ? (0.15 + 0.85 * (n / max)).toFixed(2) : 0;
         const bg = n ? `rgba(99,230,99,${alpha})` : '#1a1a1a';
-        const tip = n ? `${DAYS[d]} ${h}:00 — ${n} lol${n > 1 ? 's' : ''}` : '';
-        html += `<div class="cell" style="background:${bg}" title="${tip}"></div>`;
+        const tip = `${DAYS[d]} ${h}:00 — ${n} lol${n !== 1 ? 's' : ''}`;
+        html += `<div class="cell" style="background:${bg}" data-tip="${tip}"></div>`;
       }
     }
     html += '</div>';
