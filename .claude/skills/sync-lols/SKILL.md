@@ -21,13 +21,14 @@ Ask the user: "How many days back should I sync?" Wait for their answer.
 
 ### 3. Compute window
 - `window_start` = today (UTC) minus N days, formatted as `YYYY-MM-DD`
+- `search_after` = window_start minus 1 day, formatted as `YYYY-MM-DD` (Slack's `after:` is exclusive, so subtract 1 day to include messages on window_start itself)
 - `today_str` = today formatted as `MM-DD`
 - `from_str` = window_start formatted as `MM-DD`
-- Dump file name: `dump <from_str> - <today_str>.txt` in `C:\funny\lol-bot-github\lol\`
+- Dump file name: `dump <from_str> - <today_str>.txt` in the project root
 
 ### 4. Search Slack (paginated)
 Use `mcp__claude_ai_Slack__slack_search_public_and_private` with:
-- `query`: `from:<@$SLACK_USER_ID> :lol: after:<window_start>`
+- `query`: `from:<@$SLACK_USER_ID> :lol: after:<search_after>`
 - `sort`: `timestamp`, `sort_dir`: `asc`
 - `limit`: 20, `include_context`: false, `response_format`: detailed
 
@@ -39,8 +40,9 @@ For each message:
   - Integer part → UTC datetime (times shown as EEST = UTC+3, so subtract 3h)
   - Decimal part (6 digits) → append `0` to get 7 fractional digits
   - Format: `YYYY-MM-DDTHH:MM:SS.fffffffZ`
+- **Filter**: drop any row whose UTC date is before `window_start` (Slack may return messages from `search_after` day that are outside the delete window — inserting them would cause duplicates)
 - Count `:lol:` occurrences in the message text (each `:lol:` is 5 chars, they may be space-separated or concatenated)
-- Row number = sequential 1-based index
+- Row number = sequential 1-based index across kept rows only
 
 ### 6. Show summary and confirm
 Report:
@@ -57,11 +59,10 @@ Format (tab-separated, no header):
 2	2026-07-05T07:01:48.4756990Z	3
 ```
 
-Write to `C:\funny\lol-bot-github\lol\dump <from_str> - <today_str>.txt`
+Write to the project root: `dump <from_str> - <today_str>.txt`
 
 ### 8. Run sync.cs
 ```
-cd C:\funny\lol-bot-github\lol
 dotnet run sync.cs -- <window_start> "dump <from_str> - <today_str>.txt"
 ```
 
@@ -69,6 +70,6 @@ Report the output (deleted rows + inserted rows).
 
 ## Notes
 - Slack user ID is read dynamically from the tool description at runtime — works for any logged-in user
-- `lol.db` lives at `C:\funny\lol-bot-github\lol\lol.db`
+- `lol.db` lives in the project root
 - `sync.cs` deletes all rows where `lolled_at >= window_start` then inserts from dump
 - migrate.cs still exists for full historical reloads from a manual dump file
